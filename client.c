@@ -32,7 +32,8 @@ int connectToServer(int portNumber) {
 	server->h_length);
 	serverAddress.sin_port = htons(portNumber);
 
-	if (connect(socketFileDescriptor, (struct sockaddr *) &serverAddress, sizeof(serverAddress)) < 0) {
+	if (connect(socketFileDescriptor, (struct sockaddr *) &serverAddress,
+			sizeof(serverAddress)) < 0) {
 		printf("ERROR, connecting to server.\n");
 		close(socketFileDescriptor);
 		return -1;
@@ -63,13 +64,18 @@ int downloadFile(int socketFileDescriptor, char fileName[BUFFER_SIZE]) {
 			return -1;
 		}
 	}
-	if (file != NULL)
+	if (file == NULL) {
+		if (bytesRead == 0) {
+			printf("ERROR, file does not exist.\n");
+			return -1;
+		}
+	} else
 		fclose(file);
-
-	if (bytesRead <= 0) {
+	if (bytesRead < 0) {
 		printf("ERROR, downloading file.\n");
 		return -1;
 	}
+
 	return 0;
 }
 
