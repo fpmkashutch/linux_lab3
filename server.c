@@ -2,41 +2,50 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <unistd.h>
 #include <strings.h>
+#ifdef THREADS
+#include <pthread.h>
+#else
+#include <unistd.h>
+#endif
 
 #define PORT 1337
 #define BUFFER_SIZE 256
 
-void process(int socketFileDescriptor) {
+void* processClient(void* arg) {
 	char buffer[BUFFER_SIZE];
 	FILE *file;
-	int bytesRead;
+	int bytesRead, socketFileDescriptor = (int) arg;
 
 	if (read(socketFileDescriptor, buffer, BUFFER_SIZE) < 0) {
 		printf("ERROR, reading from socket.\n");
-		return;
+		close(socketFileDescriptor);
+		return (void*) -1;
 	}
 
-	file = fopen(buffer, "rb");
-	if (file == NULL) {
+	if ((file = fopen(buffer, "rb")) == NULL) {
 		printf("ERROR, opening file.\n");
-		return;
+		close(socketFileDescriptor);
+		return (void*) -1;
 	}
 
 	while ((bytesRead = fread(buffer, 1, BUFFER_SIZE, file)) > 0)
 		if (write(socketFileDescriptor, buffer, bytesRead) < bytesRead) {
 			printf("ERROR, writing to socket.\n");
 			fclose(file);
-			return;
+			close(socketFileDescriptor);
+			return (void*) -1;
 		}
 	if (bytesRead < 0) {
 		printf("ERROR, reading file.\n");
 		fclose(file);
-		return;
+		close(socketFileDescriptor);
+		return (void*) -1;
 	}
 
 	fclose(file);
+	close(socketFileDescriptor);
+	return 0;
 }
 
 int createConnection(int portNumber) {
@@ -84,8 +93,12 @@ int main(int argc, char **argv) {
 
 	while (1) {
 		struct sockaddr_in clientAddress;
-		pid_t pid;
 		socklen_t clientAddressLength = sizeof(clientAddress);
+#ifdef THREADS
+		pthread_t threadID;
+#else
+		pid_t pid;
+#endif
 
 		int newSocketFileDescriptor = accept(socketFileDescriptor,
 				(struct sockaddr *) &clientAddress, &clientAddressLength);
@@ -94,15 +107,21 @@ int main(int argc, char **argv) {
 			break;
 		}
 
+#ifdef THREADS
+		if (pthread_create(&threadID, NULL, processClient,
+				(void*) newSocketFileDescriptor)) {
+			printf("ERROR, creating thread.\n");
+		}
+#else
 		if ((pid = fork()) == 0) {
-			process(newSocketFileDescriptor);
-			close(newSocketFileDescriptor);
+			processClient((void*) newSocketFileDescriptor);
 			break;
 		} else {
 			if (pid == -1)
 				printf("ERROR, creating process.\n");
 			close(newSocketFileDescriptor);
 		}
+#endif
 	}
 	close(socketFileDescriptor);
 	return 0;
